@@ -10,12 +10,12 @@ extern "C" {
 
 typedef struct {
     I2C_HandleTypeDef *hi2c;
-    uint8_t *tx_buffer;
-    uint8_t *rx_buffer;
     void (*delay_ms_wrapper)(uint32_t);
     uint16_t burst_count;
+    uint16_t fifo_counter;
     uint8_t fifo_counter_raw[2];
-    uint16_t fifo_counter; 
+    uint8_t *tx_buffer;
+    uint8_t *rx_buffer;  
     uint8_t gyro_scale;
     uint8_t accel_scale;
     struct {
