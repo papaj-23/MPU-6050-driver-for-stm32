@@ -1,0 +1,8 @@
+add_library(mpu6050 STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/mpu-6050.c
+)
+
+target_include_directories(device
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)

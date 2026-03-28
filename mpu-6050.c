@@ -148,8 +148,8 @@ static MPU_6050_selftest_t calculate_ft(const uint8_t gyro[3], const uint8_t acc
 static void parse_payload_selftest(const uint8_t raw[12], int16_t *inter);
 static inline float selftest_ratio(int16_t diff, float ft);
 static inline int16_t conv_to_i16(uint8_t msb, uint8_t lsb);
-static inline HAL_StatusTypeDef gyro_path_reset(MPU_6050_t *handles);
-static inline HAL_StatusTypeDef accel_path_reset(MPU_6050_t *handles);
+static HAL_StatusTypeDef gyro_path_reset(MPU_6050_t *handles);
+static HAL_StatusTypeDef accel_path_reset(MPU_6050_t *handles);
 static HAL_StatusTypeDef bitset_helper(MPU_6050_t *handles, uint8_t reg_address, uint8_t mask, MPU_6050_state_t state);
 
 /* const lookup tables */
@@ -863,7 +863,7 @@ HAL_StatusTypeDef MPU_6050_Set_Accel_Range(MPU_6050_t *handles, MPU_6050_accel_r
 }
 
 
-static inline HAL_StatusTypeDef gyro_path_reset(MPU_6050_t *handles) {
+static HAL_StatusTypeDef gyro_path_reset(MPU_6050_t *handles) {
     MEM_CHECK(handles);
     HAL_StatusTypeDef status = HAL_OK;
     uint8_t reg = 4U;
@@ -876,7 +876,7 @@ static inline HAL_StatusTypeDef gyro_path_reset(MPU_6050_t *handles) {
 }
 
 
-static inline HAL_StatusTypeDef accel_path_reset(MPU_6050_t *handles) {
+static HAL_StatusTypeDef accel_path_reset(MPU_6050_t *handles) {
     MEM_CHECK(handles);
     HAL_StatusTypeDef status = HAL_OK;
     uint8_t reg = 2U;
