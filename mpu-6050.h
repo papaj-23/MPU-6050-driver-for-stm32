@@ -10,6 +10,7 @@ extern "C" {
 
 typedef struct {
     I2C_HandleTypeDef *hi2c;
+    MPU_6050_mode_t current_mode;
     void (*delay_ms_wrapper)(uint32_t);
     uint16_t burst_count;
     uint16_t fifo_counter;
@@ -79,7 +80,8 @@ typedef enum {
 typedef enum {
     MPU_SINGLE_MODE = 0U,
     MPU_BURST_MODE = 1U,
-    MPU_LOWPOWER_CYCLE_MODE = 2U
+    MPU_LOWPOWER_CYCLE_MODE = 2U,
+    MPU_PENDING_SWITCH = 3U
 } MPU_6050_mode_t;
 
 typedef enum {

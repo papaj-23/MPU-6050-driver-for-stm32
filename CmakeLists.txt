@@ -10,5 +10,6 @@ target_include_directories(mpu6050
 target_link_libraries(mpu6050
     PUBLIC
         hal
+    PRIVATE
         m
 )

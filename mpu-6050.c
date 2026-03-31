@@ -57,7 +57,7 @@
  * GyroRate = 1kHz (DLPF on) or 8kHz (DLPF off) */
 
 #define CONFIG_VAL_DEFAULT          0x04U   /* 0000 0100 */
-#define FIFO_EN_VAL_DEFAULT         0xF8U   /* 1111 1000 */
+#define FIFO_EN_VAL_DEFAULT         0x00U   /* 0000 0000 */
 #define INT_PIN_CFG_VAL_DEFAULT     0x20U   /* 0010 0000 */
 #define INT_ENABLE_VAL_DEFAULT      0x00U   /* 0000 0001 */
 #define PWR_MGMT_1_VAL_DEFAULT      0x00U   /* 0000 0000 */     
@@ -213,7 +213,7 @@ static const mpu6050_reg_check_t mpu6050_registers[] = {
 mpu6050_reg_check_t reg_values[CHECK_REGISTER_CNT];
 
 /**
-  * @brief  Initialize MPU6050 sensor with default configuration.
+  * @brief  Initialize MPU6050 sensor with default configuration (detailed description in header).
   * @param  handles Pointer to MPU6050 handle structure.
   * 
   * @retval HAL status.
@@ -230,6 +230,7 @@ HAL_StatusTypeDef MPU_6050_Init(MPU_6050_t *handles) {
     }
     handles->gyro_scale = DPS_250;
     handles->accel_scale = G_2;
+    handles->current_mode = MPU_SINGLE_MODE;
     handles->active_sources.acc_x = MPU_ENABLE;
     handles->active_sources.acc_y = MPU_ENABLE;
     handles->active_sources.acc_z = MPU_ENABLE;
@@ -277,6 +278,7 @@ HAL_StatusTypeDef check_registers(MPU_6050_t *handles) {
 HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
 {
     MEM_CHECK(handles);
+    handles->current_mode = MPU_PENDING_SWITCH;
     HAL_StatusTypeDef status = HAL_OK;
     uint8_t reg;
 
@@ -305,12 +307,6 @@ HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
         status = MPU_6050_FIFO_Reset(handles);
         STATUS_CHECK(status);
 
-        /* Normal power (no cycle, no sleep) */
-        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-
         /* Enable temp + gyro axes */
         status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_DISABLE);
         STATUS_CHECK(status);
@@ -320,11 +316,19 @@ HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
                                MPU_DISABLE);
         STATUS_CHECK(status);
 
-        /* Enable accel axes (clear standby) */
+        /* Enable accel axes */
         status = bitset_helper(handles, PWR_MGMT_2,
                                (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
                                MPU_DISABLE);
         STATUS_CHECK(status);
+
+        /* Normal power (no cycle, no sleep) */
+        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
+        STATUS_CHECK(status);
+        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
+        STATUS_CHECK(status);
+
+        handles->current_mode = MPU_SINGLE_MODE;
         break;
 
     case MPU_BURST_MODE:
@@ -346,12 +350,6 @@ HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
                                   &reg, 1, I2C_TIMEOUT);
         STATUS_CHECK(status);
 
-        /* Normal power (no cycle, no sleep) */
-        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-
         /* Enable temp + gyro axes */
         status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_DISABLE);
         STATUS_CHECK(status);
@@ -366,6 +364,14 @@ HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
                                (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
                                MPU_DISABLE);
         STATUS_CHECK(status);
+
+        /* Normal power (no cycle, no sleep) */
+        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
+        STATUS_CHECK(status);
+        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
+        STATUS_CHECK(status);
+
+        handles->current_mode = MPU_BURST_MODE;
         break;
 
     case MPU_LOWPOWER_CYCLE_MODE:
@@ -396,12 +402,12 @@ HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
            - Gyro in standby
            - CYCLE enabled
            - SLEEP disabled */
-        status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_ENABLE); /* TEMP_DIS=1 */
+        status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_ENABLE);
         STATUS_CHECK(status);
 
         status = bitset_helper(handles, PWR_MGMT_2,
                                (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
-                               MPU_ENABLE); /* standby=1 */
+                               MPU_ENABLE);
         STATUS_CHECK(status);
 
         /* Ensure accel enabled (standby bits cleared) */
@@ -414,6 +420,8 @@ HAL_StatusTypeDef MPU_6050_Set_Mode(MPU_6050_t *handles, MPU_6050_mode_t mode)
         STATUS_CHECK(status);
         status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_ENABLE);
         STATUS_CHECK(status);
+
+        handles->current_mode = MPU_LOWPOWER_CYCLE_MODE;
         break;
 
     default:
@@ -1032,13 +1040,33 @@ HAL_StatusTypeDef MPU_6050_Interrupt_Handler(MPU_6050_t *handles) {
                                   INT_STATUS_REG, MPU6050_REG_SIZE,
                                   &reg, 1, I2C_TIMEOUT);
     STATUS_CHECK(status);
-    if(reg & DATA_READY_INT) {
+
+    switch(handles->current_mode) {
+        case MPU_SINGLE_MODE:
+        if(reg & DATA_READY_INT) {
         MPU_6050_Single_Read(handles);
-    }
-    else if(reg & FIFO_OFLOW_INT) {
+        }
+        break;
+
+        case MPU_BURST_MODE:
+        if(reg & FIFO_OFLOW_INT) {
         status = MPU_6050_FIFO_Reset(handles);
         STATUS_CHECK(status);
+        }
+        break;
+
+        case MPU_LOWPOWER_CYCLE_MODE:
+        if(reg & DATA_READY_INT) {
+        MPU_6050_Single_Read(handles);
+        }
+        break;
+
+        case MPU_PENDING_SWITCH:
+        return HAL_OK;
+        break;
     }
+    
+        
 
     return HAL_OK;
 }
