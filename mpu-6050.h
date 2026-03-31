@@ -7,6 +7,12 @@ extern "C" {
 
 #include "stm32l4xx_hal.h"
 
+typedef enum {
+    MPU_SINGLE_MODE = 0U,
+    MPU_BURST_MODE = 1U,
+    MPU_LOWPOWER_CYCLE_MODE = 2U,
+    MPU_PENDING_SWITCH = 3U
+} MPU_6050_mode_t;
 
 typedef struct {
     I2C_HandleTypeDef *hi2c;
@@ -76,13 +82,6 @@ typedef enum {
     MPU_DISABLE = 0U,
     MPU_ENABLE = 1U
 } MPU_6050_state_t;
-
-typedef enum {
-    MPU_SINGLE_MODE = 0U,
-    MPU_BURST_MODE = 1U,
-    MPU_LOWPOWER_CYCLE_MODE = 2U,
-    MPU_PENDING_SWITCH = 3U
-} MPU_6050_mode_t;
 
 typedef enum {
     F_1_25HZ = 0U,
