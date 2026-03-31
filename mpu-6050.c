@@ -659,34 +659,41 @@ HAL_StatusTypeDef MPU_6050_Self_Test(MPU_6050_t *handles, MPU_6050_selftest_t *r
                                test_config, 2, I2C_TIMEOUT);
     STATUS_CHECK(status);
     mpu_delay(handles, 50);
+
+    uint8_t test_raw[4];
+    uint8_t gyro_test[3];
+    uint8_t accel_test[3];
+    status = HAL_I2C_Mem_Read(handles->hi2c, I2C_ADDRESS_HAL,
+                            SELF_TEST_X, MPU6050_REG_SIZE,
+                            test_raw, 4, I2C_TIMEOUT);
+    STATUS_CHECK(status);
+
+    enum{x = 0, y = 1, z = 2, a = 3};
+    accel_test[x] = ((test_raw[x] & 0xE0U) >> 3) | ((test_raw[a] & 0x30U) >> 4);
+    accel_test[y] = ((test_raw[y] & 0xE0U) >> 3) | ((test_raw[a] & 0x0CU) >> 2);
+    accel_test[z] = ((test_raw[z] & 0xE0U) >> 3) | (test_raw[a] & 0x03U);
+    gyro_test[x] = test_raw[x] & 0x1FU;
+    gyro_test[y] = test_raw[y] & 0x1FU;
+    gyro_test[z] = test_raw[z] & 0x1FU;
+
+    MPU_6050_selftest_t ft = calculate_ft(gyro_test, accel_test);
     
-    MPU_6050_selftest_t st_sum = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    struct {
+        int16_t accel_x;
+        int16_t accel_y;
+        int16_t accel_z;
+        int16_t gyro_x;
+        int16_t gyro_y;
+        int16_t gyro_z;
+    } diff;
 
     for(uint8_t i = 0; i < SELFTEST_SAMPLE_AMOUNT; i++) {
-        uint8_t test_raw[4];
-        uint8_t gyro_test[3];
-        uint8_t accel_test[3];
-
-        status = HAL_I2C_Mem_Read(handles->hi2c, I2C_ADDRESS_HAL,
-                                SELF_TEST_X, MPU6050_REG_SIZE,
-                                test_raw, 4, I2C_TIMEOUT);
-        STATUS_CHECK(status);
-
-        enum{x = 0, y = 1, z = 2, a = 3};
-        accel_test[x] = ((test_raw[x] & 0xE0U) >> 3) | ((test_raw[a] & 0x30U) >> 4);
-        accel_test[y] = ((test_raw[y] & 0xE0U) >> 3) | ((test_raw[a] & 0x0CU) >> 2);
-        accel_test[z] = ((test_raw[z] & 0xE0U) >> 3) | (test_raw[a] & 0x03U);
-        gyro_test[x] = test_raw[x] & 0x1FU;
-        gyro_test[y] = test_raw[y] & 0x1FU;
-        gyro_test[z] = test_raw[z] & 0x1FU;
-
-        MPU_6050_selftest_t ft = calculate_ft(gyro_test, accel_test);
-        
         uint8_t test_dis_data_raw[SELFTEST_PAYLOAD];
         uint8_t test_en_data_raw[SELFTEST_PAYLOAD];
         int16_t test_dis_data_numerical[SELFTEST_PAYLOAD/2];
         int16_t test_en_data_numerical[SELFTEST_PAYLOAD/2];
 
+        mpu_delay(handles, 50);
         status = HAL_I2C_Mem_Read(handles->hi2c, I2C_ADDRESS_HAL,
                                 ACCEL_XOUT_H, MPU6050_REG_SIZE,
                                 test_dis_data_raw, SELFTEST_PAYLOAD/2, I2C_TIMEOUT);
@@ -727,36 +734,27 @@ HAL_StatusTypeDef MPU_6050_Self_Test(MPU_6050_t *handles, MPU_6050_selftest_t *r
         parse_payload_selftest(test_dis_data_raw, test_dis_data_numerical);
         parse_payload_selftest(test_en_data_raw, test_en_data_numerical);
 
-        struct {
-            int16_t accel_x;
-            int16_t accel_y;
-            int16_t accel_z;
-            int16_t gyro_x;
-            int16_t gyro_y;
-            int16_t gyro_z;
-        } diff;
-
-        diff.accel_x = test_en_data_numerical[0] - test_dis_data_numerical[0];
-        diff.accel_y = test_en_data_numerical[1] - test_dis_data_numerical[1];
-        diff.accel_z = test_en_data_numerical[2] - test_dis_data_numerical[2];
-        diff.gyro_x  = test_en_data_numerical[3] - test_dis_data_numerical[3];
-        diff.gyro_y  = test_en_data_numerical[4] - test_dis_data_numerical[4];
-        diff.gyro_z  = test_en_data_numerical[5] - test_dis_data_numerical[5];
-
-        st_sum.accel_x += selftest_ratio(diff.accel_x, ft.accel_x);
-        st_sum.accel_y += selftest_ratio(diff.accel_y, ft.accel_y);
-        st_sum.accel_z += selftest_ratio(diff.accel_z, ft.accel_z);
-        st_sum.gyro_x  += selftest_ratio(diff.gyro_x,  ft.gyro_x);
-        st_sum.gyro_y  += selftest_ratio(diff.gyro_y,  ft.gyro_y);
-        st_sum.gyro_z  += selftest_ratio(diff.gyro_z,  ft.gyro_z);
+        diff.accel_x += test_en_data_numerical[0] - test_dis_data_numerical[0];
+        diff.accel_y += test_en_data_numerical[1] - test_dis_data_numerical[1];
+        diff.accel_z += test_en_data_numerical[2] - test_dis_data_numerical[2];
+        diff.gyro_x  += test_en_data_numerical[3] - test_dis_data_numerical[3];
+        diff.gyro_y  += test_en_data_numerical[4] - test_dis_data_numerical[4];
+        diff.gyro_z  += test_en_data_numerical[5] - test_dis_data_numerical[5];
     }
 
-    result->accel_x = st_sum.accel_x/SELFTEST_SAMPLE_AMOUNT;
-    result->accel_y = st_sum.accel_y/SELFTEST_SAMPLE_AMOUNT;
-    result->accel_z = st_sum.accel_z/SELFTEST_SAMPLE_AMOUNT;
-    result->gyro_x  = st_sum.gyro_x/SELFTEST_SAMPLE_AMOUNT;
-    result->gyro_y  = st_sum.gyro_y/SELFTEST_SAMPLE_AMOUNT;
-    result->gyro_z  = st_sum.gyro_z/SELFTEST_SAMPLE_AMOUNT;
+    diff.accel_x /= SELFTEST_SAMPLE_AMOUNT;
+    diff.accel_y /= SELFTEST_SAMPLE_AMOUNT;
+    diff.accel_z /= SELFTEST_SAMPLE_AMOUNT;
+    diff.gyro_x  /= SELFTEST_SAMPLE_AMOUNT;
+    diff.gyro_y  /= SELFTEST_SAMPLE_AMOUNT;
+    diff.gyro_z  /= SELFTEST_SAMPLE_AMOUNT;
+
+    result->accel_x = selftest_ratio(diff.accel_x, ft.accel_x);
+    result->accel_y = selftest_ratio(diff.accel_y, ft.accel_y);
+    result->accel_z = selftest_ratio(diff.accel_z, ft.accel_z);
+    result->gyro_x  = selftest_ratio(diff.gyro_x,  ft.gyro_x);
+    result->gyro_y  = selftest_ratio(diff.gyro_y,  ft.gyro_y);
+    result->gyro_z  = selftest_ratio(diff.gyro_z,  ft.gyro_z);
 
     /* restore original measuement ranges */
     status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
