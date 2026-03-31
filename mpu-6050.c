@@ -7,7 +7,7 @@
 #define I2C_TIMEOUT         10U     /*  ms  */
 #define FULL_PAYLOAD_SIZE        14U
 #define SELFTEST_PAYLOAD    12U
-#define SELFTEST_SAMPLE_AMOUNT 5U
+#define SELFTEST_SAMPLE_AMOUNT (int32_t)(5)
 /*  Sensor register addresses  */
 
 /*  Registers  */
@@ -130,6 +130,9 @@
                             }                                      \
                         }while (0)
 
+#define BUS_READY_WAIT(hi2c)        \
+    while(HAL_I2C_GetState(hi2c) != HAL_I2C_STATE_READY) {}
+
 /* local strucutres definitions */
 
 typedef struct {
@@ -229,6 +232,7 @@ HAL_StatusTypeDef MPU_6050_Init(MPU_6050_t *handles) {
                                   &v, 1, I2C_TIMEOUT);
         STATUS_CHECK(status);
     }
+    mpu_delay(handles, 50);
     handles->gyro_scale = DPS_250;
     handles->accel_scale = G_2;
     handles->current_mode = MPU_SINGLE_MODE;
@@ -679,13 +683,13 @@ HAL_StatusTypeDef MPU_6050_Self_Test(MPU_6050_t *handles, MPU_6050_selftest_t *r
     MPU_6050_selftest_t ft = calculate_ft(gyro_test, accel_test);
     
     struct {
-        int16_t accel_x;
-        int16_t accel_y;
-        int16_t accel_z;
-        int16_t gyro_x;
-        int16_t gyro_y;
-        int16_t gyro_z;
-    } diff;
+        int32_t accel_x;
+        int32_t accel_y;
+        int32_t accel_z;
+        int32_t gyro_x;
+        int32_t gyro_y;
+        int32_t gyro_z;
+    } diff = {0};
 
     for(uint8_t i = 0; i < SELFTEST_SAMPLE_AMOUNT; i++) {
         uint8_t test_dis_data_raw[SELFTEST_PAYLOAD];
@@ -693,7 +697,7 @@ HAL_StatusTypeDef MPU_6050_Self_Test(MPU_6050_t *handles, MPU_6050_selftest_t *r
         int16_t test_dis_data_numerical[SELFTEST_PAYLOAD/2];
         int16_t test_en_data_numerical[SELFTEST_PAYLOAD/2];
 
-        mpu_delay(handles, 50);
+        mpu_delay(handles, 100);
         status = HAL_I2C_Mem_Read(handles->hi2c, I2C_ADDRESS_HAL,
                                 ACCEL_XOUT_H, MPU6050_REG_SIZE,
                                 test_dis_data_raw, SELFTEST_PAYLOAD/2, I2C_TIMEOUT);
@@ -711,7 +715,7 @@ HAL_StatusTypeDef MPU_6050_Self_Test(MPU_6050_t *handles, MPU_6050_selftest_t *r
                                 GYRO_CONFIG_REG, MPU6050_REG_SIZE,
                                 test_config, 2, I2C_TIMEOUT);
         STATUS_CHECK(status);
-        mpu_delay(handles, 50);
+        mpu_delay(handles, 100);
 
         status = HAL_I2C_Mem_Read(handles->hi2c, I2C_ADDRESS_HAL,
                                 ACCEL_XOUT_H, MPU6050_REG_SIZE,
@@ -730,6 +734,7 @@ HAL_StatusTypeDef MPU_6050_Self_Test(MPU_6050_t *handles, MPU_6050_selftest_t *r
                                 GYRO_CONFIG_REG, MPU6050_REG_SIZE,
                                 test_config, 2, I2C_TIMEOUT);
         STATUS_CHECK(status);
+        mpu_delay(handles, 100);
 
         parse_payload_selftest(test_dis_data_raw, test_dis_data_numerical);
         parse_payload_selftest(test_en_data_raw, test_en_data_numerical);
@@ -1091,8 +1096,6 @@ HAL_StatusTypeDef MPU_6050_Interrupt_Handler(MPU_6050_t *handles) {
         break;
     }
     
-        
-
     return HAL_OK;
 }
 
