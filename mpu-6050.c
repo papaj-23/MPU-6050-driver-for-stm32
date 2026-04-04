@@ -6,7 +6,7 @@
 #define I2C_TIMEOUT         10U     /*  ms  */
 #define FULL_PAYLOAD_SIZE        14U
 #define SELFTEST_PAYLOAD    12U
-#define SELFTEST_SAMPLE_AMOUNT (int32_t)(5)
+#define SELFTEST_SAMPLE_AMOUNT 10
 /*  Sensor register addresses  */
 
 /*  Registers  */
@@ -54,7 +54,7 @@
 
 
 #define FIFO_EN_VAL_DEFAULT         0x00U   /* 0000 0000 */
-#define INT_PIN_CFG_VAL_DEFAULT     0x20U   /* 0010 0000 */
+#define INT_PIN_CFG_VAL_DEFAULT     0x00U   /* 0010 0000 */
 #define INT_ENABLE_VAL_DEFAULT      0x01U   /* 0000 0001 */
 #define PWR_MGMT_1_VAL_DEFAULT      0x00U   /* 0000 0000 */     
 
@@ -135,6 +135,7 @@ typedef struct {
 
 /* static functions declarations */
 
+static HAL_StatusTypeDef set_fifo_content(MPU_6050_t *handles, MPU_6050_fifo_content_t content, MPU_6050_state_t state);
 static void mpu_delay(MPU_6050_t *handles, uint32_t ms);
 static MPU_6050_selftest_t calculate_ft(const uint8_t gyro[3], const uint8_t accel[3]);
 static void parse_payload_selftest(const uint8_t raw[12], int16_t *inter);
@@ -304,147 +305,147 @@ HAL_StatusTypeDef MPU_6050_set_mode(MPU_6050_t *handles, MPU_6050_mode_t mode) {
 
     switch (mode) {
     case MPU_SINGLE_MODE:
-        /* INT: Data Ready */
-        reg = DATA_READY_INT;
-        status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
-                                  INT_ENABLE_REG, MPU6050_REG_SIZE,
-                                  &reg, 1, I2C_TIMEOUT);
-        STATUS_CHECK(status);
+    /* INT: Data Ready */
+    reg = DATA_READY_INT;
+    status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
+                                INT_ENABLE_REG, MPU6050_REG_SIZE,
+                                &reg, 1, I2C_TIMEOUT);
+    STATUS_CHECK(status);
 
-        /* FIFO OFF */
-        status = bitset_helper(handles, USER_CTRL_REG, FIFO_ENABLE, MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* FIFO OFF */
+    status = bitset_helper(handles, USER_CTRL_REG, FIFO_ENABLE, MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        /* ALL FIFO SOURCES OFF */
-        reg = 0U;
-        status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
-                                  FIFO_EN_REG, MPU6050_REG_SIZE,
-                                  &reg, 1, I2C_TIMEOUT);
-        STATUS_CHECK(status);
+    /* ALL FIFO SOURCES OFF */
+    reg = 0U;
+    status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
+                                FIFO_EN_REG, MPU6050_REG_SIZE,
+                                &reg, 1, I2C_TIMEOUT);
+    STATUS_CHECK(status);
 
-        /* Reset FIFO to prevent FIFO_OFLOW_INT bit setting every sample if FIFO is full */
-        status = MPU_6050_fifo_reset(handles);
-        STATUS_CHECK(status);
+    /* Reset FIFO to prevent FIFO_OFLOW_INT bit setting every sample if FIFO is full */
+    status = MPU_6050_fifo_reset(handles);
+    STATUS_CHECK(status);
 
-        /* Enable temp + gyro axes */
-        status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Enable temp + gyro axes */
+    status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        status = bitset_helper(handles, PWR_MGMT_2,
-                               (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
-                               MPU_DISABLE);
-        STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_2,
+                            (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
+                            MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        /* Enable accel axes */
-        status = bitset_helper(handles, PWR_MGMT_2,
-                               (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
-                               MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Enable accel axes */
+    status = bitset_helper(handles, PWR_MGMT_2,
+                            (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
+                            MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        /* Normal power (no cycle, no sleep) */
-        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Normal power (no cycle, no sleep) */
+    status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
+    STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        handles->meas_mode = MPU_SINGLE_MODE;
-        break;
+    handles->meas_mode = MPU_SINGLE_MODE;
+    break;
 
     case MPU_BURST_MODE:
-        /* INT: FIFO overflow */
-        reg = FIFO_OFLOW_INT;
-        status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
-                                  INT_ENABLE_REG, MPU6050_REG_SIZE,
-                                  &reg, 1, I2C_TIMEOUT);
-        STATUS_CHECK(status);
+    /* INT: FIFO overflow */
+    reg = FIFO_OFLOW_INT;
+    status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
+                                INT_ENABLE_REG, MPU6050_REG_SIZE,
+                                &reg, 1, I2C_TIMEOUT);
+    STATUS_CHECK(status);
 
-        /* FIFO ON */
-        status = bitset_helper(handles, USER_CTRL_REG, FIFO_ENABLE, MPU_ENABLE);
-        STATUS_CHECK(status);
+    /* FIFO ON */
+    status = bitset_helper(handles, USER_CTRL_REG, FIFO_ENABLE, MPU_ENABLE);
+    STATUS_CHECK(status);
 
-        /* ALL FIFO SOURCES ON */
-        reg = 248U;
-        status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
-                                  FIFO_EN_REG, MPU6050_REG_SIZE,
-                                  &reg, 1, I2C_TIMEOUT);
-        STATUS_CHECK(status);
+    /* ALL FIFO SOURCES ON */
+    reg = 248U;
+    status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
+                                FIFO_EN_REG, MPU6050_REG_SIZE,
+                                &reg, 1, I2C_TIMEOUT);
+    STATUS_CHECK(status);
 
-        /* Enable temp + gyro axes */
-        status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Enable temp + gyro axes */
+    status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        status = bitset_helper(handles, PWR_MGMT_2,
-                               (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
-                               MPU_DISABLE);
-        STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_2,
+                            (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
+                            MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        /* Enable accel axes (clear standby) */
-        status = bitset_helper(handles, PWR_MGMT_2,
-                               (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
-                               MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Enable accel axes (clear standby) */
+    status = bitset_helper(handles, PWR_MGMT_2,
+                            (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
+                            MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        /* Normal power (no cycle, no sleep) */
-        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Normal power (no cycle, no sleep) */
+    status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_DISABLE);
+    STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        handles->meas_mode = MPU_BURST_MODE;
-        break;
+    handles->meas_mode = MPU_BURST_MODE;
+    break;
 
     case MPU_LOWPOWER_CYCLE_MODE:
-        /* INT: Data Ready */
-        reg = DATA_READY_INT;
-        status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
-                                  INT_ENABLE_REG, MPU6050_REG_SIZE,
-                                  &reg, 1, I2C_TIMEOUT);
-        STATUS_CHECK(status);
+    /* INT: Data Ready */
+    reg = DATA_READY_INT;
+    status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
+                                INT_ENABLE_REG, MPU6050_REG_SIZE,
+                                &reg, 1, I2C_TIMEOUT);
+    STATUS_CHECK(status);
 
-        /* FIFO OFF (cycle mode is accel-only low power; FIFO streaming doesn't make sense here) */
-        status = bitset_helper(handles, USER_CTRL_REG, FIFO_ENABLE, MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* FIFO OFF (cycle mode is accel-only low power; FIFO streaming doesn't make sense here) */
+    status = bitset_helper(handles, USER_CTRL_REG, FIFO_ENABLE, MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        /* ALL FIFO SOURCES OFF */
-        reg = 0U;
-        status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
-                                  FIFO_EN_REG, MPU6050_REG_SIZE,
-                                  &reg, 1, I2C_TIMEOUT);
-        STATUS_CHECK(status);
+    /* ALL FIFO SOURCES OFF */
+    reg = 0U;
+    status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
+                                FIFO_EN_REG, MPU6050_REG_SIZE,
+                                &reg, 1, I2C_TIMEOUT);
+    STATUS_CHECK(status);
 
-        /* Reset FIFO to prevent FIFO_OFLOW_INT bit setting every sample if FIFO is full */
-        status = MPU_6050_fifo_reset(handles);
-        STATUS_CHECK(status);
+    /* Reset FIFO to prevent FIFO_OFLOW_INT bit setting every sample if FIFO is full */
+    status = MPU_6050_fifo_reset(handles);
+    STATUS_CHECK(status);
 
-        /* Required for accel-only low power cycle:
-           - TEMP disabled
-           - Gyro in standby
-           - CYCLE enabled
-           - SLEEP disabled */
-        status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_ENABLE);
-        STATUS_CHECK(status);
+    /* Required for accel-only low power cycle:
+        - TEMP disabled
+        - Gyro in standby
+        - CYCLE enabled
+        - SLEEP disabled */
+    status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, MPU_ENABLE);
+    STATUS_CHECK(status);
 
-        status = bitset_helper(handles, PWR_MGMT_2,
-                               (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
-                               MPU_ENABLE);
-        STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_2,
+                            (uint8_t)(GYRO_X_STANDBY | GYRO_Y_STANDBY | GYRO_Z_STANDBY),
+                            MPU_ENABLE);
+    STATUS_CHECK(status);
 
-        /* Ensure accel enabled (standby bits cleared) */
-        status = bitset_helper(handles, PWR_MGMT_2,
-                               (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
-                               MPU_DISABLE);
-        STATUS_CHECK(status);
+    /* Ensure accel enabled (standby bits cleared) */
+    status = bitset_helper(handles, PWR_MGMT_2,
+                            (uint8_t)(ACCEL_X_STANDBY | ACCEL_Y_STANDBY | ACCEL_Z_STANDBY),
+                            MPU_DISABLE);
+    STATUS_CHECK(status);
 
-        status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
-        STATUS_CHECK(status);
-        status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_ENABLE);
-        STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, MPU_DISABLE);
+    STATUS_CHECK(status);
+    status = bitset_helper(handles, PWR_MGMT_1, CYCLE_MODE, MPU_ENABLE);
+    STATUS_CHECK(status);
 
-        handles->meas_mode = MPU_LOWPOWER_CYCLE_MODE;
-        break;
+    handles->meas_mode = MPU_LOWPOWER_CYCLE_MODE;
+    break;
 
     default:
-        status = HAL_ERROR;;
+    status = HAL_ERROR;;
     }
 
     exit:
@@ -467,9 +468,6 @@ HAL_StatusTypeDef MPU_6050_set_sleep(MPU_6050_t *handles, MPU_6050_state_t state
     lock_bus(handles);
 
     status = bitset_helper(handles, PWR_MGMT_1, SLEEP_MODE, state);
-    STATUS_CHECK(status);
-
-    exit:
     unlock_bus(handles);
 
     return status;
@@ -499,7 +497,6 @@ HAL_StatusTypeDef MPU_6050_set_lp_wakeup_freq(MPU_6050_t *handles, MPU_6050_lp_f
     status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
                                PWR_MGMT_2, MPU6050_REG_SIZE,
                                &reg, 1, I2C_TIMEOUT);
-    STATUS_CHECK(status);
 
     exit:
     unlock_bus(handles);
@@ -524,87 +521,105 @@ HAL_StatusTypeDef MPU_6050_set_source(MPU_6050_t *handles, MPU_6050_meas_channel
 
     switch (ch) {
     case ACCEL_X_CH:
-        handles->active_sources.acc_x = state ? MPU_ENABLE : MPU_DISABLE;
-        if(state == MPU_DISABLE &&
-           handles->active_sources.acc_x == MPU_DISABLE &&
-           handles->active_sources.acc_y == MPU_DISABLE &&
-           handles->active_sources.acc_z == MPU_DISABLE) {
-                status = MPU_6050_set_fifo_content(handles, FIFO_ACCEL, MPU_DISABLE);
-                STATUS_CHECK(status);
+    handles->active_sources.acc_x = state;
+    status = bitset_helper(handles, PWR_MGMT_2, ACCEL_X_STANDBY, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        if(!(handles->active_sources.acc_y || handles->active_sources.acc_z)) {
+            STATUS_CHECK(status);
+            status = set_fifo_content(handles, FIFO_ACCEL, state);
         }
-        else if(state == MPU_ENABLE &&
-           handles->active_sources.acc_y == MPU_DISABLE &&
-           handles->active_sources.acc_z == MPU_DISABLE) {
-                status = MPU_6050_set_fifo_content(handles, FIFO_ACCEL, MPU_ENABLE);
-                STATUS_CHECK(status);
-        }
-        
-        return bitset_helper(handles, PWR_MGMT_2, ACCEL_X_STANDBY, real_state);
-
-    case ACCEL_Y_CH:
-        handles->active_sources.acc_y = state ? MPU_ENABLE : MPU_DISABLE;
-        if(state == MPU_DISABLE &&
-           handles->active_sources.acc_x == MPU_DISABLE &&
-           handles->active_sources.acc_y == MPU_DISABLE &&
-           handles->active_sources.acc_z == MPU_DISABLE) {
-                status = MPU_6050_set_fifo_content(handles, FIFO_ACCEL, MPU_DISABLE);
-                STATUS_CHECK(status);
-        }
-        else if(state == MPU_ENABLE &&
-           handles->active_sources.acc_x == MPU_DISABLE &&
-           handles->active_sources.acc_z == MPU_DISABLE) {
-                status = MPU_6050_set_fifo_content(handles, FIFO_ACCEL, MPU_ENABLE);
-                STATUS_CHECK(status);
-        }
-        
-        return bitset_helper(handles, PWR_MGMT_2, ACCEL_Y_STANDBY, real_state);
-
-    case ACCEL_Z_CH:
-        handles->active_sources.acc_z = state ? MPU_ENABLE : MPU_DISABLE;
-        if(state == MPU_DISABLE &&
-           handles->active_sources.acc_x == MPU_DISABLE &&
-           handles->active_sources.acc_y == MPU_DISABLE &&
-           handles->active_sources.acc_z == MPU_DISABLE) {
-                status = MPU_6050_set_fifo_content(handles, FIFO_ACCEL, MPU_DISABLE);
-                STATUS_CHECK(status);
-        }
-        else if(state == MPU_ENABLE &&
-           handles->active_sources.acc_x == MPU_DISABLE &&
-           handles->active_sources.acc_y == MPU_DISABLE) {
-                status = MPU_6050_set_fifo_content(handles, FIFO_ACCEL, MPU_ENABLE);
-                STATUS_CHECK(status);
-        }
-
-        return bitset_helper(handles, PWR_MGMT_2, ACCEL_Z_STANDBY, real_state);
-
-    case GYRO_X_CH:
-        handles->active_sources.gyro_x = state ? MPU_ENABLE : MPU_DISABLE;
-        status = MPU_6050_set_fifo_content(handles, FIFO_GYRO_X, state);
-        STATUS_CHECK(status);
-        return bitset_helper(handles, PWR_MGMT_2, GYRO_X_STANDBY, real_state);
-
-    case GYRO_Y_CH:
-        handles->active_sources.gyro_y = state ? MPU_ENABLE : MPU_DISABLE;
-        status = MPU_6050_set_fifo_content(handles, FIFO_GYRO_Y, state);
-        STATUS_CHECK(status);
-        return bitset_helper(handles, PWR_MGMT_2, GYRO_Y_STANDBY, real_state);
-
-    case GYRO_Z_CH:
-        handles->active_sources.gyro_z = state ? MPU_ENABLE : MPU_DISABLE;
-        status = MPU_6050_set_fifo_content(handles, FIFO_GYRO_Z, state);
-        STATUS_CHECK(status);
-        return bitset_helper(handles, PWR_MGMT_2, GYRO_Z_STANDBY, real_state);
-
-    case TEMP_CH:
-        handles->active_sources.temp = state ? MPU_ENABLE : MPU_DISABLE;
-        status = MPU_6050_set_fifo_content(handles, FIFO_TEMP, state);
-        STATUS_CHECK(status);
-        return bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, real_state);
-
-    default:
-        exit:
-        return HAL_ERROR;
     }
+    break;
+    case ACCEL_Y_CH:
+    handles->active_sources.acc_y = state;
+    status = bitset_helper(handles, PWR_MGMT_2, ACCEL_Y_STANDBY, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        if(!(handles->active_sources.acc_x || handles->active_sources.acc_z)) {
+            STATUS_CHECK(status);
+            status = set_fifo_content(handles, FIFO_ACCEL, state);
+        }
+    }
+    break;
+    case ACCEL_Z_CH:
+    handles->active_sources.acc_z = state;
+    status = bitset_helper(handles, PWR_MGMT_2, ACCEL_Z_STANDBY, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        if(!(handles->active_sources.acc_y || handles->active_sources.acc_x)) {
+            STATUS_CHECK(status);
+            status = set_fifo_content(handles, FIFO_ACCEL, state);
+        }
+    }
+    break;
+    case GYRO_X_CH:
+    handles->active_sources.gyro_x = state;
+    status = bitset_helper(handles, PWR_MGMT_2, GYRO_X_STANDBY, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        STATUS_CHECK(status);
+        status = set_fifo_content(handles, FIFO_GYRO_X, state);
+    }
+    break;
+    case GYRO_Y_CH:
+    handles->active_sources.gyro_y = state;
+    status = bitset_helper(handles, PWR_MGMT_2, GYRO_Y_STANDBY, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        STATUS_CHECK(status);
+        status = set_fifo_content(handles, FIFO_GYRO_Y, state);
+    }
+    break;
+    case GYRO_Z_CH:
+    handles->active_sources.gyro_z = state;
+    status = bitset_helper(handles, PWR_MGMT_2, GYRO_Z_STANDBY, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        STATUS_CHECK(status);
+        status = set_fifo_content(handles, FIFO_GYRO_Z, state);
+    }
+    break;
+    case TEMP_CH:
+    handles->active_sources.temp = state;
+    status = bitset_helper(handles, PWR_MGMT_1, TEMP_DIS, real_state);
+    if(handles->meas_mode == MPU_BURST_MODE) {
+        STATUS_CHECK(status);
+        status = set_fifo_content(handles, FIFO_TEMP, state);
+    }
+    break;
+    default:
+    status = HAL_ERROR;
+    }
+
+    exit:
+    unlock_bus(handles);
+
+    return status;
+}
+
+
+static HAL_StatusTypeDef set_fifo_content(MPU_6050_t *handles, MPU_6050_fifo_content_t content, MPU_6050_state_t state) {
+    MEM_CHECK(handles);
+    HAL_StatusTypeDef status = HAL_OK;
+
+    status = bitset_helper(handles, FIFO_EN_REG, (uint8_t)content, state);
+
+    return status;
+}
+
+
+/**
+  * @brief  Enable or disable selected sensor data in FIFO buffer.
+  * @param  handles Pointer to MPU6050 handle structure.
+  * @param  content FIFO content mask (combination of MPU_6050_fifo_content_t values).
+  * @param  state   MPU_ENABLE to set bits, MPU_DISABLE to clear bits.
+  *
+  * @retval HAL status.
+  */
+HAL_StatusTypeDef MPU_6050_set_fifo_content(MPU_6050_t *handles, MPU_6050_fifo_content_t content, MPU_6050_state_t state) {
+    MEM_CHECK(handles);
+    HAL_StatusTypeDef status = HAL_OK;
+    lock_bus(handles);
+
+    status = bitset_helper(handles, FIFO_EN_REG, (uint8_t)content, state);
+    unlock_bus(handles);
+
+    return status;
 }
 
 
@@ -637,7 +652,6 @@ HAL_StatusTypeDef MPU_6050_fifo_reset(MPU_6050_t *handles) {
     status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
                                USER_CTRL_REG, MPU6050_REG_SIZE,
                                &reg, 1, I2C_TIMEOUT);
-    STATUS_CHECK(status);
 
     exit:
     handles->fifo_oflow_flag = 0U;
@@ -812,7 +826,6 @@ HAL_StatusTypeDef MPU_6050_self_test(MPU_6050_t *handles, MPU_6050_selftest_t *r
     status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
                                PWR_MGMT_2, MPU6050_REG_SIZE,
                                &power_mgmt2_original, 1, I2C_TIMEOUT);
-    STATUS_CHECK(status);
 
     exit:
     unlock_bus(handles);
@@ -902,7 +915,6 @@ HAL_StatusTypeDef MPU_6050_set_gyro_range(MPU_6050_t *handles, MPU_6050_gyro_ran
     STATUS_CHECK(status);
     handles->gyro_scale = range;
     status = gyro_path_reset(handles);
-    STATUS_CHECK(status);
 
     exit:
     unlock_bus(handles);
@@ -936,7 +948,6 @@ HAL_StatusTypeDef MPU_6050_set_accel_range(MPU_6050_t *handles, MPU_6050_accel_r
     STATUS_CHECK(status);
     handles->accel_scale = range;
     status = accel_path_reset(handles);
-    STATUS_CHECK(status);
 
     exit:
     unlock_bus(handles);
@@ -976,29 +987,6 @@ static HAL_StatusTypeDef accel_path_reset(MPU_6050_t *handles) {
 
 
 /**
-  * @brief  Enable or disable selected sensor data in FIFO buffer.
-  * @param  handles Pointer to MPU6050 handle structure.
-  * @param  content FIFO content mask (combination of MPU_6050_fifo_content_t values).
-  * @param  state   MPU_ENABLE to set bits, MPU_DISABLE to clear bits.
-  *
-  * @retval HAL status.
-  */
-HAL_StatusTypeDef MPU_6050_set_fifo_content(MPU_6050_t *handles, MPU_6050_fifo_content_t content, MPU_6050_state_t state) {
-    MEM_CHECK(handles);
-    HAL_StatusTypeDef status = HAL_OK;
-    lock_bus(handles);
-
-    status = bitset_helper(handles, FIFO_EN_REG, (uint8_t)content, state);
-    STATUS_CHECK(status);
-
-    exit:
-    unlock_bus(handles);
-
-    return status;
-}
-
-
-/**
   * @brief  Start single DMA read of sensor measurement payload.
   * @param  handles Pointer to MPU6050 handle structure.
   *
@@ -1014,9 +1002,7 @@ HAL_StatusTypeDef MPU_6050_single_read(MPU_6050_t *handles) {
     status = HAL_I2C_Mem_Read_DMA(handles->hi2c, I2C_ADDRESS_HAL,
                                   ACCEL_XOUT_H, MPU6050_REG_SIZE,
                                   handles->rx_buffer, FULL_PAYLOAD_SIZE);
-    STATUS_CHECK(status);
 
-    exit:
     return status;
 }
 
@@ -1070,9 +1056,7 @@ HAL_StatusTypeDef MPU_6050_burst_read(MPU_6050_t *handles) {
     status = HAL_I2C_Mem_Read_DMA(handles->hi2c, I2C_ADDRESS_HAL,
                                   FIFO_R_W, MPU6050_REG_SIZE,
                                   handles->rx_buffer, handles->burst_count);
-    STATUS_CHECK(status);
 
-    exit:
     return status;
 }
 
@@ -1183,13 +1167,11 @@ static void lock_bus(MPU_6050_t *handles) {
     handles->bus_status = MPU_BUS_LOCKED;
     uint32_t start_tick = HAL_GetTick();
     uint32_t current_tick;
-    HAL_I2C_StateTypeDef state_debug = HAL_I2C_GetState(handles->hi2c);
-    while(state_debug != HAL_I2C_STATE_READY) {
+    while(HAL_I2C_GetState(handles->hi2c) != HAL_I2C_STATE_READY) {
         current_tick = HAL_GetTick();
-        if(current_tick - start_tick > 10*I2C_TIMEOUT) {
+        if(current_tick - start_tick > I2C_TIMEOUT) {
             break;
         }
-        state_debug = HAL_I2C_GetState(handles->hi2c);
     }
 }
 
@@ -1217,7 +1199,6 @@ static HAL_StatusTypeDef bitset_helper(MPU_6050_t *handles, uint8_t reg_address,
     status = HAL_I2C_Mem_Write(handles->hi2c, I2C_ADDRESS_HAL,
                                (uint16_t)reg_address, MPU6050_REG_SIZE,
                                &reg, 1, I2C_TIMEOUT);
-    STATUS_CHECK(status);
 
     exit:
     return status;

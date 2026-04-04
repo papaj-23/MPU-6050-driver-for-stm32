@@ -119,7 +119,7 @@ typedef enum {
 /* For details check out README section DPLF Setting or vendor datasheet directly */
 #define CONFIG_VAL_DEFAULT          0x04U
 
-#define MPU_USE_DEBUG_REGISTERS 1
+#define MPU_USE_DEBUG_REGISTERS 0
 
 
 #if (MPU_USE_DEBUG_REGISTERS == 1)
