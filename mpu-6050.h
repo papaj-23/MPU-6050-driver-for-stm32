@@ -440,6 +440,30 @@ void MPU_6050_parse_payload(MPU_6050_t *handles);
   */
 MPU_6050_data_t MPU_6050_payload_to_readable(MPU_6050_t *handles);
 
+/**
+  * @brief  Template for handling INT pin ISR.
+  * @param  handles Pointer to MPU6050 handle structure.
+  *
+  * @details
+  * This is a reference to an example isr implementation with __attribute__(weak).
+  * User can use it, overwrite it or ignore it and provide own implementation
+  * 
+  * @retval HAL status
+  */
+HAL_StatusTypeDef MPU_6050_int_isr(MPU_6050_t *handles);
+
+/**
+  * @brief  Template for handling I2C rxcplt ISR.
+  * @param  handles Pointer to MPU6050 handle structure.
+  *
+  * @details
+  * This is a reference to an example isr implementation with __attribute__(weak).
+  * User can use it, overwrite it or ignore it and provide own implementation
+  * 
+  * @retval HAL status
+  */
+HAL_StatusTypeDef MPU_6050_i2c_rxcplt_isr(MPU_6050_t *handles);
+
 #ifdef __cplusplus
 }
 #endif
