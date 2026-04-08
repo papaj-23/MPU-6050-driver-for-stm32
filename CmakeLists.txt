@@ -1,6 +1,15 @@
+option(USE_ISR_TEMPLATES ON)
+
 add_library(mpu6050 STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/mpu-6050.c
 )
+
+if(USE_ISR_TEMPLATES)
+    target_sources(
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/isr_templates.c
+
+    )
 
 target_include_directories(mpu6050
     PUBLIC
