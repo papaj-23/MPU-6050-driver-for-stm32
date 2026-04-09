@@ -142,7 +142,6 @@ static void mpu_delay(MPU_6050_t *handles, uint32_t ms);
 static MPU_6050_selftest_t calculate_ft(const uint8_t gyro[3], const uint8_t accel[3]);
 static void parse_payload_selftest(const uint8_t raw[12], int16_t *inter);
 static inline float selftest_ratio(int16_t diff, float ft);
-static inline void MPU_6050_process_burst_cnt(MPU_6050_t *handles);
 static inline int16_t conv_to_i16(uint8_t msb, uint8_t lsb);
 static HAL_StatusTypeDef gyro_path_reset(MPU_6050_t *handles);
 static HAL_StatusTypeDef accel_path_reset(MPU_6050_t *handles);
@@ -155,8 +154,8 @@ static HAL_StatusTypeDef bitset_helper(MPU_6050_t *handles, uint8_t reg_address,
 
 static const reg_t init_registers[] = {
     { PWR_MGMT_1,        PWR_MGMT_1_VAL_DEFAULT},
-    { SMPLRT_DIV_REG,    SMPLTR_DIV_VAL_DEFAULT },
-    { CONFIG_REG,        CONFIG_VAL_DEFAULT },
+    { SMPLRT_DIV_REG,    SMPLTR_DIV_VAL },
+    { CONFIG_REG,        CONFIG_VAL },
     { FIFO_EN_REG,       FIFO_EN_VAL_DEFAULT },
     { INT_ENABLE_REG,    INT_ENABLE_VAL_DEFAULT },
     { INT_PIN_CFG_REG,   INT_PIN_CFG_VAL_DEFAULT}
@@ -1109,11 +1108,10 @@ HAL_StatusTypeDef MPU_6050_read_fifo_cnt(MPU_6050_t *handles) {
 /**
   * @brief  Converts raw fifo_count to uint16_t fifo_count
   * @param  handles Pointer to MPU6050 handle structure.
-  * @param  raw two bytes of burst_count [high, low]
   * 
   * @retval None
   */
-static inline void MPU_6050_process_burst_cnt(MPU_6050_t *handles) {
+void MPU_6050_process_burst_cnt(MPU_6050_t *handles) {
     if(handles == NULL) {
         return;
     }

@@ -1,192 +1,240 @@
 # MPU6050 STM32 Library (HAL / DMA)
 
-C driver for the **InvenSense MPU6050** IMU, written for **STM32** microcontrollers using **STM32 HAL** (I2C transfer).  
+Lightweight C driver for the **InvenSense MPU6050** written for **STM32** microcontrollers using **STM32 HAL**.
+
 Author: **papaj-23**
+
+---
+
+## Overview
+
+This library provides a light and practical MPU6050 driver designed for embedded workflows:
+
+- HAL-based register access
+- DMA-based data acquisition
+- Flexible integration (bare-metal / RTOS)
+
+---
+
+## Quick Start
+
+```c
+MPU_6050_t imu = {
+    .hi2c = &hi2c1,
+    .rx_buffer = dma_rx_buf,
+    .inter_buffer = raw_data_buf,
+    .delay_ms_wrapper = delay_ms
+};
+
+MPU_6050_init(&imu);
+MPU_6050_set_mode(&imu, MPU_SINGLE_MODE);
+MPU_6050_set_accel_range(&imu, G_2);
+MPU_6050_set_gyro_range(&imu, DPS_250);
+
+/* inside ISR */
+MPU_6050_single_read(&imu);
+
+/* inside processing task */
+MPU_6050_parse_payload(&imu);
+MPU_6050_data_t data = MPU_6050_payload_to_readable(&imu);
+```
+
+---
 
 ## Features
 
-- STM32 HAL I2C support (`HAL_I2C_Mem_Read/Write`)
-- DMA reads for:
-  - single 14B measurement payload read (ACCEL+TEMP+GYRO)
-  - FIFO count read (2B)
-  - FIFO burst read (N bytes)
+- HAL I2C support (`HAL_I2C_Mem_Read/Write`)
+- Init sequence
+- Built-in self-test procedure
+- DMA reads:
+  - Data registers
+  - FIFO count
+  - INT status
 - Operating modes:
-  - `MPU_SINGLE_MODE` — Data Ready interrupt, FIFO off
-  - `MPU_BURST_MODE` — FIFO overflow interrupt, FIFO on
-  - `MPU_LOWPOWER_CYCLE_MODE` — accel-only duty-cycled mode (gyro + temp disabled)
-- Per-channel enable/disable (accel axes, gyro axes, temp)
-- FIFO content selection (accel / gyro axes / temp)
-- FIFO reset helper (for overflow handling)
-- Gyro/Accel range configuration + signal path reset
-- Built-in self-test procedure (factory trim + response ratio in %)
-- Parsing utilities:
-  - raw 14B → `int16_t[7]`
-  - `int16_t[7]` → scaled `MPU6050_data_t`
+  - `MPU_SINGLE_MODE`
+  - `MPU_BURST_MODE`
+  - `MPU_LOWPOWER_CYCLE_MODE`
+- Per-channel enable/disable
+- FIFO content selection
+- FIFO reset helper
+- Gyro/Accel range configuration
+- Wakeup frequency configuration
+- Parsing pipeline:
+  - raw → int16 → physical units
+- Optional ISR helpers
+
+---
 
 ## Requirements
 
-- STM32 project using HAL
+- Project that uses STM32 HAL
 - Configured I2C peripheral
-- Configured DMA for cyclic measurement data handling
-- MPU6050 connected via I2C:
-  - 7-bit address: `0x68` (default) or `0x69` (AD0 high)
-  - This implementation uses `0x68`
+- Configured DMA for I2C
+- Configured external GPIO for INT pin
+- Delay function, preferably non blocking one
 
-> Note: header includes `stm32l4xx_hal.h`, but the driver is generally portable across STM32 families using HAL.
+---
 
 ## Files
 
-- `mpu-6050.h` — public API, types, documentation
-- `mpu-6050.c` — implementation (register map, helpers, HAL calls)
+- `mpu-6050.h` - public API
+- `mpu-6050.c` - implementation
 
-## Quick start
+---
 
-### 1) Add files to your project
-Add `mpu-6050.c` to sources and `mpu-6050.h` to include paths.
+## MPU_6050 Handle Description
 
-### 2) Create handle + buffers
+- `I2C_HandleTypeDef *hi2c` - pointer to i2c instance configured for MPU6050
+- `uint8_t *rx_buffer` - pointer to dma rx buffer, used to store measurements only
+- `MPU_6050_rawdata_t *inter_buffer` - pointer to intermediate buffer used for data parsing
+- `void (*delay_ms_wrapper)(uint32_t)` - hook to delay function, that takes milliseconds as argument.  
+**Providing a delay function is necessary for some functions to work properly !**
+- `MPU_6050_mode_t meas_mode` - current measurement mode. Not to be written manually. Can be read if needed.
+- `MPU_6050_bus_access_t bus_status` - i2c bus lock. Can be modified manually if needed. It blocks data operations while locked though.
+- `uint16_t burst_count` - burst read threshold. Can be set once through BURST_COUNT macro during initialization and modified later if needed.
+- `volatile uint16_t fifo_count` - amount of bytes in fifo buffer. Can be used manually in user's ISR implementation.
+- `volatile uint8_t fifo_count_raw[2]` - destination buffer for dma read of FIFO_COUNT H/L registers. Not to be used manually.
+- `volatile uint8_t int_status` - raw value of INT_STATUS register. Can be used manually in user's ISR implementation.
+- `uint8_t payload_bytes` - amount of bytes that current payload consists of. Managed internally by library.
+- `uint8_t gyro_scale` - current gyroscope scale. Not to be written manually. Can be read if needed.
+- `uint8_t accel_scale` - current accelerometer scale. Not to be written manually. Can be read if needed.
+- `volatile uint8_t fifo_oflow_flag` - FIFO overflow flag used only by template ISR due to polling nature of fifo reset function.
+- `active_sources` - struct that stores current states (enabled/disabled) of all sensor channels.
 
+Minimal required initialization:
 ```c
-#include "mpu-6050.h"
-
-static uint8_t tx_buf[32];      // optional (reserved for future extensions)
-static uint8_t rx_buf[1024];    // must be >= max burst_count you use
-
-extern I2C_HandleTypeDef hi2c1;
-
-/* Handle to delay function is optional though recomended. 
-You can use HAL_Delay or your own implementation of millisecond delay function */
-static void delay_ms(uint32_t ms) {
-    HAL_Delay(ms);
-}
-
-MPU6050_t imu = {
-    .hi2c = &hi2c1,
-    .tx_buffer = tx_buf,
-    .rx_buffer = rx_buf,
-    .delay_ms_wrapper = delay_ms,
-    .burst_count = 0,   // count of data bytes you want to read within a single burst read
+MPU_6050_t imu = {
+    .hi2c = &hi2cx,
+    .rx_buffer = &dma_rx_buf,
+    .inter_buffer = &raw_data_buf,
+    .delay_ms_wrapper = delay_ms_function
 };
 ```
 
-### 3) Init + basic config
+---
 
-```c
-HAL_StatusTypeDef st;
+## Interface Macros
 
-st = MPU_6050_Init(&imu);
-if(st != HAL_OK) Error_Handler();
+- `I2C_ADDRESS_7B` - I2C address of MPU6050. Can be either 0x68 or 0x69 depending on AD0 external pullup or pulldown.
+- `BURST_COUNT` - burst read threshold. Has to be set between 0U and 1024U. Should be divisible by the amount of bytes written to FIFO within single sample to avoid data frame fracturing
+- `SMPLTR_DIV_VAL` - SMPLTR_DIV register value that determines sample rate according to equation below:  
+`Sample Rate = GyroRate / (1 + SMPLRT_DIV)`   
+    - GyroRate = 1 kHz (DLPF enabled)
+    - GyroRate = 8 kHz (DLPF disabled)
+- `CONFIG_VAL` - value of 3 LSB in CONFIG register that determine Digital Low-Pass Filter parameters
+- `MPU_USE_DEBUG_REGISTERS` - enable/disable register value check mechanism
 
-MPU_6050_Set_Accel_Range(&imu, G_4);
-MPU_6050_Set_Gyro_Range(&imu, DPS_500);
+---
 
-MPU_6050_Set_Mode(&imu, MPU_SINGLE_MODE);
+## Public API Functions
+
+### Initialization & Configuration
+- `MPU_6050_init()` - Initialize MPU6050 driver and hardware interface
+- `MPU_6050_set_mode()` - Configure operating mode (single, burst, low-power cycle)
+- `MPU_6050_set_sleep()` - Enable/disable sleep mode
+- `MPU_6050_set_lp_wakeup_freq()` - Configure low-power wake-up frequency
+- `MPU_6050_set_gyro_range()` - Set gyroscope full-scale range
+- `MPU_6050_set_accel_range()` - Set accelerometer full-scale range
+
+### Measurement Control
+- `MPU_6050_set_source()` - Enable/disable measurement channels
+- `MPU_6050_set_fifo_content()` - Configure FIFO content manually
+
+### Data Acquisition
+- `MPU_6050_single_read()` - Start single DMA read (single mode)
+- `MPU_6050_low_power_read()` - Start DMA read (low-power cycle mode)
+- `MPU_6050_read_fifo_cnt()` - Read current FIFO byte count
+- `MPU_6050_burst_read()` - Start burst DMA read from FIFO
+
+### Data Processing
+- `MPU_6050_parse_payload()` - Convert raw byte payload to int16_t values
+- `MPU_6050_payload_to_readable()` - Convert raw data to physical units (g, deg/s, °C)
+- `MPU_6050_process_burst_cnt()` - Convert raw fifo_count to uint16_t
+
+### Maintenance & Diagnostics
+- `MPU_6050_fifo_reset()` - Reset FIFO buffer and resume operation
+- `MPU_6050_self_test()` - Perform built-in self-test procedure
+
+### Interrupt Handling (Templates)
+- `MPU_6050_int_isr()` - INT pin interrupt handler template
+- `MPU_6050_i2c_rxcplt_isr()` - I2C RX complete interrupt handler template
+
+### **For more detailed description go to comments in header file of the library**
+
+---
+
+## Mode Workflows
+
+### Single Read Mode
+
+Typical measurement flow:
+
+1. Wait for interrupt (INT pin)
+2. Read INT status register
+3. Verify `DATA_READY` interrupt source
+4. Call `MPU_6050_single_read()`
+5. Wait for DMA transfer completion
+6. Parse and process received data
+7. Store or forward results
+8. Repeat for next interrupt
+
+---
+
+### Burst Read Mode (FIFO)
+
+Typical measurement flow:
+
+1. Periodically read FIFO count using `MPU_6050_read_fifo_cnt()`
+2. Check if FIFO count ≥ configured `burst_count`
+3. If condition is met:
+   - Call `MPU_6050_burst_read()`
+   - Wait for DMA transfer completion
+   - Parse entire FIFO payload
+4. Process and store extracted samples
+5. Repeat periodically
+
+**Notes:**
+- If FIFO overflow interrupt occurs, it is recommended to call `MPU_6050_fifo_reset()`
+- DMA buffer and intermediate buffer must be large enough to hold full burst payload
+- Sampling frequency and polling rate should be aligned to avoid overflow
+
+---
+
+### Low Power Cycle Mode
+
+Typical measurement flow:
+
+1. Wait for interrupt (INT pin)
+2. Read INT status register
+3. Verify `DATA_READY` interrupt source
+4. Call `MPU_6050_low_power_read()`
+5. Wait for DMA transfer completion
+6. Parse and process received data (accelerometer only)
+7. Store or forward results
+8. Repeat for next interrupt
+
+---
+
+## Build Integration (CMake)
+
+The driver is provided as a static library:
+
+```cmake
+add_library(mpu6050 STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/mpu-6050.c
+)
+
+target_include_directories(mpu6050
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(mpu6050
+    PUBLIC
+        hal
+    PRIVATE
+        m
+)
 ```
 
-## Reading data
-
-### Single measurement read (DMA)
-
-Reads 14 bytes starting at `ACCEL_XOUT_H`:
-- accel (6B), temp (2B), gyro (6B)
-
-```c
-MPU_6050_Single_Read(&imu);  // starts DMA read into imu.rx_buffer
-```
-
-In your I2C DMA complete callback (or after completion), parse and scale:
-
-```c
-int16_t raw7[7];
-MPU_6050_parse_payload(imu.rx_buffer, raw7);
-
-MPU6050_data_t meas = MPU_6050_payload_to_readable(&imu, raw7);
-/* meas.accel_* [g], meas.gyro_* [deg/s], meas.temp [°C] */
-```
-
-> The library doesn’t implement callbacks yet; use standard HAL callbacks and your application logic.
-
-## FIFO burst workflow
-
-### 1) Configure FIFO content + burst mode
-
-```c
-MPU_6050_Set_FIFO_Content(&imu, FIFO_ACCEL, MPU_ENABLE);
-MPU_6050_Set_FIFO_Content(&imu, FIFO_TEMP,  MPU_ENABLE);
-MPU_6050_Set_FIFO_Content(&imu, FIFO_GYRO_X | FIFO_GYRO_Y | FIFO_GYRO_Z, MPU_ENABLE);
-
-MPU_6050_Set_Mode(&imu, MPU_BURST_MODE);
-```
-
-### 2) Read FIFO count (DMA) + convert
-
-```c
-MPU_6050_Read_FIFO_Cnt(&imu);      // DMA reads 2 bytes into imu.fifo_counter_raw[]
-MPU_6050_Process_Burst_Cnt(&imu);  // converts to imu.fifo_counter (uint16_t)
-```
-
-### 3) Set `burst_count` and read FIFO (DMA)
-
-```c
-imu.burst_count = imu.fifo_counter;   // or clamp/align to payload size
-MPU_6050_Burst_Read(&imu);            // DMA reads burst_count bytes into imu.rx_buffer
-```
-
-### FIFO overflow handling
-
-In `MPU_BURST_MODE` the interrupt source is FIFO overflow. On overflow event:
-
-```c
-MPU_6050_FIFO_Reset(&imu);
-```
-
-## Low power accel-only cycle mode
-
-Configures:
-- FIFO off
-- temp disabled
-- gyros in standby
-- accel enabled
-- cycle enabled
-- Data Ready interrupt enabled
-
-```c
-MPU_6050_Set_Mode(&imu, MPU_LOWPOWER_CYCLE_MODE);
-MPU_6050_Set_Lp_Wakeup_Freq(&imu, F_20HZ); // example
-```
-
-## Self-test
-
-```c
-MPU6050_selftest_t st_res;
-MPU_6050_Self_Test(&imu, &st_res);
-/* st_res: accel_x/y/z, gyro_x/y/z (% response ratio) */
-```
-
-Device should remain stationary. A delay callback (`delay_ms_wrapper`) is recommended.
-
-## API overview
-
-- `MPU_6050_Init()`
-- `MPU_6050_Set_Mode()`
-- `MPU_6050_Set_Sleep()`
-- `MPU_6050_Set_Lp_Wakeup_Freq()`
-- `MPU_6050_Set_Channel_State()`
-- `MPU_6050_FIFO_Reset()`
-- `MPU_6050_Self_Test()`
-- `MPU_6050_Set_Gyro_Range()`
-- `MPU_6050_Set_Accel_Range()`
-- `MPU_6050_Set_FIFO_Content()`
-- `MPU_6050_Single_Read()` (DMA)
-- `MPU_6050_Read_FIFO_Cnt()` (DMA)
-- `MPU_6050_Process_Burst_Cnt()`
-- `MPU_6050_Burst_Read()` (DMA)
-- `MPU_6050_parse_payload()`
-- `MPU_6050_payload_to_readable()`
-
-## Notes
-
-- Driver stores selected ranges (`handles->gyro_scale`, `handles->accel_scale`) for scaling.
-- FIFO count is read into `fifo_counter_raw[2]` and then converted to `fifo_counter`.
-- Default I2C timeout is short (10 ms) — adjust if needed.
-
+It depends on math standard library (m) and STM32 HAL ('hal' or any other name provided by user)

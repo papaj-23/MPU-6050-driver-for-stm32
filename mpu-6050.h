@@ -20,14 +20,25 @@ typedef enum {
   MPU_BUS_LOCKED = 1U
 } MPU_6050_bus_access_t;
 
+/* data struct for raw format */
+typedef struct {
+  int16_t accel_x;
+  int16_t accel_y;
+  int16_t accel_z;
+  int16_t temp;
+  int16_t gyro_x;
+  int16_t gyro_y;
+  int16_t gyro_z;
+} MPU_6050_rawdata_t;
+
 /* sensor handle struct */
 typedef struct {
   I2C_HandleTypeDef *hi2c;
-  MPU_6050_mode_t meas_mode;
-  MPU_6050_bus_access_t bus_status;
-  void (*delay_ms_wrapper)(uint32_t);
   uint8_t *rx_buffer; 
   MPU_6050_rawdata_t *inter_buffer;
+  void (*delay_ms_wrapper)(uint32_t);
+  MPU_6050_mode_t meas_mode;
+  MPU_6050_bus_access_t bus_status;
   uint16_t burst_count;
   volatile uint16_t fifo_count;
   volatile uint8_t fifo_count_raw[2];
@@ -68,17 +79,6 @@ typedef struct {
   float gyro_y;
   float gyro_z;
 } MPU_6050_data_t;
-
-/* data struct for raw format */
-typedef struct {
-  int16_t accel_x;
-  int16_t accel_y;
-  int16_t accel_z;
-  int16_t temp;
-  int16_t gyro_x;
-  int16_t gyro_y;
-  int16_t gyro_z;
-} MPU_6050_rawdata_t;
 
 /* library eneble/disable */
 typedef enum {
@@ -138,14 +138,14 @@ typedef enum {
   FIFO members separately - any active axis means 6 bytes per sample. 
   BURST COUNT max value is 1024 - size of hardware buffer.
   BURST COUNT value should be divisible by the amount of bytes written in a single sample */
-#define BURST_COUNT 256
+#define BURST_COUNT 256U
 
 /* Sample Rate = GyroRate / (1 + SMPLRT_DIV)
  * GyroRate = 1kHz (DLPF on) or 8kHz (DLPF off) */
-#define SMPLTR_DIV_VAL_DEFAULT      0x09U
+#define SMPLTR_DIV_VAL     0x63U
 
 /* For details check out README section DPLF Setting or vendor datasheet directly */
-#define CONFIG_VAL_DEFAULT          0x04U
+#define CONFIG_VAL         0x04U
 
 /* setting this to 1 enables a simple mechanism to read all registers significant for this library */
 #define MPU_USE_DEBUG_REGISTERS 0
@@ -399,6 +399,14 @@ HAL_StatusTypeDef MPU_6050_low_power_read(MPU_6050_t *handles);
 HAL_StatusTypeDef MPU_6050_read_fifo_cnt(MPU_6050_t *handles);
 
 /**
+  * @brief  Converts raw fifo_count to uint16_t fifo_count
+  * @param  handles Pointer to MPU6050 handle structure.
+  * 
+  * @retval None
+  */
+void MPU_6050_process_burst_cnt(MPU_6050_t *handles);
+
+/**
   * @brief  Start burst DMA read from FIFO.
   * @param  handles Pointer to MPU6050 handle structure.
   *
@@ -413,11 +421,32 @@ HAL_StatusTypeDef MPU_6050_read_fifo_cnt(MPU_6050_t *handles);
 HAL_StatusTypeDef MPU_6050_burst_read(MPU_6050_t *handles);
 
 /**
-  * @brief  Converts raw uint8_t payload into int16_t payload
-  * @param  raw   Pointer to raw sensor payload (14 bytes).
+  * @brief  Converts raw uint8_t payload into int16_t payload.
+  * @param  handles Pointer to MPU6050 handle structure.
   *
   * @details
-  * 
+  * Parses the content of handles->rx_buffer according to the currently selected
+  * measurement mode and stores converted signed 16-bit values in the buffer
+  * pointed to by handles->inter_buffer.
+  *
+  * In MPU_SINGLE_MODE, the function parses one full measurement frame:
+  * accelerometer XYZ, temperature and gyroscope XYZ.
+  *
+  * In MPU_LOWPOWER_CYCLE_MODE, the function parses one reduced measurement frame
+  * containing only accelerometer XYZ values.
+  *
+  * In MPU_BURST_MODE, the function parses the entire FIFO payload currently stored
+  * in handles->rx_buffer. The layout of each frame depends on the currently active
+  * measurement sources and handles->payload_bytes value.
+  *
+  * @note
+  * In MPU_SINGLE_MODE and MPU_LOWPOWER_CYCLE_MODE, the buffer pointed to by
+  * handles->inter_buffer should provide space for exactly one MPU_6050_rawdata_t
+  * sample.
+  *
+  * In MPU_BURST_MODE, the whole received payload is parsed at once, therefore
+  * handles->inter_buffer should provide enough space for
+  * (handles->burst_count / handles->payload_bytes) samples.
   *
   * @retval None.
   */
